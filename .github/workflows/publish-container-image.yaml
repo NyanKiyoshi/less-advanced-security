@@ -2,7 +2,7 @@ name: Publish container image
 
 on:
   push:
-    branches: [main, custom]
+    branches: [main, custom, experiments]
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
 
@@ -13,6 +13,20 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      matrix:
+        # Sets the different Dockerfile stages we want to publish:
+        # - non-distroless (default)
+        # - distroless
+        # Docs: https://github.com/docker/metadata-action/blob/dbef88086f6cef02e264edb7dbf63250c17cef6c/README.md#flavor-input
+        #
+        # stage_name: the target name inside the Dockerfile.
+        # tag_suffix: what to append to the container image tags (suffix=<string>,onlatest=<true|false>]).
+        flavor:
+          - stage_name: cli
+          - stage_name: distroless-cli
+            tag_suffix: "-distroless,onlatest=true"
 
     steps:
       - name: Checkout
@@ -29,6 +43,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@dbef88086f6cef02e264edb7dbf63250c17cef6c # v5.5.0
         with:
+          flavor: |
+            latest=auto
+            suffix=${{ matrix.flavor.tag_suffix }}
           images: |
             ghcr.io/${{ steps.image.outputs.image_name }}
           tags: |
@@ -53,14 +70,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Push
-        id: docker_build
         uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56 # v5.1.0
         with:
           builder: ${{ steps.buildx.outputs.name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          context: .
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
+          target: ${{ matrix.flavor.stage_name }}
+          context: .
